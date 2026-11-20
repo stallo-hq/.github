@@ -55,5 +55,9 @@ If Stallo isn't confident it understood, it doesn't change the order. It replies
 ## Money
 
 - Amounts are integer pesewas everywhere and shown as `GH₵ 12.50`.
-- Fee per paid order: `PLATFORM_FEE_PERCENT` of the subtotal plus `PLATFORM_FEE_FLAT_PESEWAS`, never more than the order. It is recorded on the order.
+- Stallo's fee per order: `PLATFORM_FEE_PERCENT` of the goods plus `PLATFORM_FEE_FLAT_PESEWAS`, capped at `PLATFORM_FEE_CAP_PESEWAS` (pilot: 1.5%, cap GH₵ 15). Never charged on the delivery fee. Recorded on the order.
+- Delivery fee: set by the seller, added to every order total.
+- Cash on delivery (seller switches it on): the customer replies CASH to the summary. Any delivery fee is paid online first; the goods are paid to the rider. The rider ticks "I collected the cash" before the code is accepted; the seller marks "Cash received from rider".
+- Fees on cash orders are added to the seller's balance when the cash is collected and taken from later online payments (never more than half of one payment). Cash is not offered while a seller owes GH₵ 50 or more.
+- Rider fees are agreed between seller and rider. Stallo only shows the amount, and whether the rider keeps it from the cash; it never pays riders.
 - Refunds go through Paystack's Refund API from the order page.
