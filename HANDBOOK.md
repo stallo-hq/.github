@@ -6,19 +6,19 @@ This handbook sets out how the Stallo project is organized: the repositories, th
 
 ## 1. Product overview
 
-Stallo is a WhatsApp commerce assistant for small sellers. A seller links a WhatsApp account by scanning a QR code. Customers order in ordinary chat. Stallo interprets those messages, creates orders, collects payment through Paystack or Hubtel, tracks delivery, and sends the seller a daily summary along with any items that need attention.
+Stallo is a WhatsApp commerce assistant for small sellers in Ghana. A seller connects their WhatsApp number through Meta's official WhatsApp Cloud API. Customers order in ordinary chat. Stallo reads those messages, builds the order, sends a Paystack payment link (keeping a per-order fee automatically), coordinates delivery with a 4-digit PIN, and sends the seller a daily summary along with anything that needs their attention.
+
+The MVP scope and flows are in [`MVP.md`](MVP.md). The architecture decision is [ADR 0001](decisions/0001-convex-and-cloud-api.md).
 
 ## 2. Repositories
 
 | Repository | Purpose | Stack |
 |---|---|---|
-| [`stallo-api`](https://github.com/stallo-hq/stallo-api) | Webhooks, orchestration, domain services, workers, database | Python 3.12, FastAPI, PostgreSQL, RabbitMQ, Alembic |
-| [`stallo-web`](https://github.com/stallo-hq/stallo-web) | Seller dashboard | React, TypeScript, Vite, TanStack Query |
-| `.github` | This handbook and shared templates | Markdown |
+| [`stallo-web`](https://github.com/stallo-hq/stallo-web) | Marketing site, seller dashboard, rider page **and the whole backend** (`convex/`: data, auth, webhooks, integrations, scheduled jobs) | React 19, TypeScript, Vite, React Router 7, Radix UI, Convex, Convex Auth |
+| [`stallo-api`](https://github.com/stallo-hq/stallo-api) | Not used by the MVP (see ADR 0001). Kept for reference until it is archived. | Python 3.12, FastAPI |
+| `.github` | This handbook, ADRs, MVP spec, deploy and template docs | Markdown |
 
-**Separate frontend and backend repositories.** Each side ships on its own schedule and has its own CI and reviewers, which keeps pull requests focused. The **contract between them is the OpenAPI schema** that `stallo-api` publishes at `/openapi.json`. `stallo-web` generates its types from that schema.
-
-**One backend application.** Each component in the architecture diagram is a **module** inside `stallo-api`, not a separate service. It deploys as one API process and two worker processes. A module is split out only if it later needs to scale on its own.
+**One backend.** Everything server-side runs as Convex functions in `stallo-web/convex/`: queries and mutations for the dashboard, HTTP actions for the WhatsApp and Paystack webhooks, actions for outside APIs, and crons for retries and the daily summary. The contract between the web app and the backend is the generated Convex API (`convex/_generated/api`), so types are always in step.
 
 ## 3. Organization
 
@@ -37,34 +37,36 @@ Every area of the codebase has **one owner role**. The owner decides questions w
 
 | Role | GitHub team | Responsibilities |
 |---|---|---|
-| **R1 Integrations** | `integrations` | WhatsApp linked-device integration (Evolution API / WAHA); webhook receivers; RabbitMQ topology and queue contracts; seller accounts and linked sessions; local development stack |
-| **R2 AI & Orchestration** | `ai` | LLM extraction (prompts, output schemas, confidence scoring); parser/orchestrator routing; conversation manager (state, pending questions, order sessions) |
-| **R3 Commerce Domain** | `commerce` | Database schema and migrations; order service and state machine; inventory; delivery |
-| **R4 Payments & Notifications** | `payments` | Paystack/Hubtel integration and webhook verification; payment service (payment status tracked separately from order status); exception manager; paced outbound messaging; seller alerts; daily summary |
-| **R5 Frontend Architecture** | `frontend` | Frontend structure, routing, authentication, API client; dashboard, payments and settings pages (including WhatsApp QR linking) |
-| **R6 Frontend & Delivery** | `frontend` | Orders, inventory and "needs attention" pages; CI pipelines; deployment and environments; end-to-end test plan |
+| **R1 Integrations** | `integrations` | WhatsApp Cloud API (Embedded Signup, webhook, sending, templates); reliable inbound processing and retries; seller accounts |
+| **R2 AI & Orchestration** | `ai` | LLM extraction (prompt, output schema, confidence); conversation handling (basket, questions, confirmation) |
+| **R3 Commerce Domain** | `commerce` | Convex schema; order state machine; products and stock; delivery and PIN |
+| **R4 Payments & Notifications** | `payments` | Paystack subaccounts, split payments, webhook verification, refunds; needs attention; outbound messaging; daily summary |
+| **R5 Frontend Architecture** | `frontend` | Frontend structure, routing, sign-up and SMS verification, design system; overview and settings pages |
+| **R6 Frontend & Delivery** | `frontend` | Orders, products and rider pages; CI; deployment and environments; end-to-end test plan |
 
 Role assignments are recorded in the GitHub team memberships, not in this document. To see who holds a role, open the team at `github.com/orgs/stallo-hq/teams`.
 
-### 3.3 Backend module ownership
+### 3.3 Module ownership (`stallo-web`)
 
-| `stallo-api` path | Owner |
+| Path | Owner |
 |---|---|
-| `app/modules/ingestion/`, `app/modules/sellers/`, `app/messaging/` | R1 |
-| `app/modules/orchestrator/`, `app/modules/conversations/` | R2 |
-| `app/modules/orders/`, `app/modules/inventory/`, `app/modules/delivery/`, `alembic/` | R3 |
-| `app/modules/payments/`, `app/modules/exceptions/`, `app/modules/notifications/` | R4 |
-| Shared configuration, CI and `.github/` | `leads` |
+| `convex/http.ts`, `convex/inbound.ts`, `convex/outbound.ts`, `convex/whatsappConnect.ts`, `convex/integrations/whatsapp.ts`, `convex/whatsapp/` | R1 |
+| `convex/integrations/assistant.ts`, `convex/model/conversation.ts`, `convex/model/copy.ts` | R2 |
+| `convex/schema.ts`, `convex/model/orders.ts`, `convex/products.ts`, `convex/orders.ts`, `convex/deliveries.ts`, `convex/model/delivery.ts` | R3 |
+| `convex/payments.ts`, `convex/payouts.ts`, `convex/integrations/paystack.ts`, `convex/model/attention.ts`, `convex/model/fees.ts`, `convex/summary.ts` | R4 |
+| `src/app/`, `src/components/`, `src/features/{landing,auth,overview,settings}/`, `src/styles/` | R5 |
+| `src/features/{orders,products,rider,payment}/`, CI, `vercel.json` | R6 |
+| `CLAUDE.md`, shared configuration, `.github/` | `leads` |
 
 ### 3.4 Interfaces between roles
 
 | Interface | Between | Defined in |
 |---|---|---|
-| Normalized inbound message | R1 → R2 | `ingestion/schemas.py` |
-| Queue and event names, event payloads | R1 and all consumers | `app/messaging/queues.py` |
-| LLM extraction output (intent, items, quantities, confidence) | R2 → R3 | `orchestrator/schemas.py` |
-| Order and payment status values | R3 ↔ R4 | `orders/state_machine.py`, `payments/schemas.py` |
-| Dashboard REST API | R1–R4 → R5, R6 | OpenAPI (`/openapi.json`) |
+| Stored inbound message and its processing states | R1 → R2 | `convex/schema.ts` (`inboundMessages`), `convex/inbound.ts` |
+| LLM extraction output (intent, items, address, confidence) | R2 → R3 | `convex/integrations/assistant.ts` (`Extraction`) |
+| Order and payment status values and allowed moves | R3 ↔ R4 | `convex/model/orders.ts` |
+| WhatsApp template names and parameters | R1, R3, R4 | `convex/whatsapp/templates.ts`, [`whatsapp-templates.md`](whatsapp-templates.md) |
+| Dashboard data | R1–R4 → R5, R6 | Generated Convex API (`convex/_generated/api`) |
 
 A change to any file in this table is a **contract change**. Its pull request must tag every affected owner, and it's merged before any code that depends on it.
 
@@ -107,49 +109,49 @@ chore(ci): cache pip dependencies
 
 ### 4.5 Definition of done
 - [ ] Merged to `main` with CI passing
-- [ ] Tests cover the new logic (backend: pytest; frontend: type-safe and manually verified)
-- [ ] Migration included if the schema changed
-- [ ] API types regenerated in `stallo-web` if the API changed
+- [ ] Tests cover the new logic (`vitest` for `src/lib`, `convex-test` for Convex functions)
 - [ ] Documentation updated if setup or behaviour changed
 - [ ] Issue closed on the board
 
 ## 5. Engineering standards
 
-**Backend**
-- Routers stay thin. Business logic lives in `service.py`.
-- Modules don't import each other's `models.py`. They interact through service functions or domain events.
-- Status changes go through the relevant state machine and are never set directly.
-- Webhook endpoints validate the request, enqueue it and return `202`. Processing happens in workers.
-- Every LLM extraction carries a confidence score. Results below `LLM_CONFIDENCE_THRESHOLD` go to the exception manager instead of creating an order.
-- Code is formatted and linted with `ruff`, and all functions have type hints.
+**Backend (Convex)**
+- Public functions stay thin. Rules live in `convex/model/`. Every seller-facing function starts with `requireSeller` / `currentSeller` and checks the caller owns what it touches.
+- Every function validates its arguments with `v.*` validators.
+- Status changes go through `transition()` / `setPaymentStatus()` in `convex/model/orders.ts` and are never set directly.
+- Webhooks verify the signature on the raw body, fail closed when the secret isn't set, store the event, and return quickly. Processing happens in scheduled functions.
+- Anything sent to WhatsApp goes through `queueMessage` (stored first, retried, failures recorded).
+- Every LLM extraction carries a confidence score. Results below `LLM_CONFIDENCE_THRESHOLD` go to Needs attention instead of changing an order. Prices always come from the product list, never from the model.
+- Money is integer pesewas, phones are E.164, time zone is Africa/Accra.
 
 **Frontend**
-- Code is organized by feature under `src/features/<area>/`.
-- Server state is managed with TanStack Query hooks, using the generated OpenAPI types.
-- `npm run lint` and `npm run build` pass before a pull request is opened.
+- Code is organized by feature under `src/features/<area>/`. Pages use their feature's hooks, not Convex directly.
+- Styling is CSS Modules plus the tokens in `src/styles/tokens.css`. No UI kits.
+- `npm run lint`, `npm test` and `npm run build` pass before a pull request is opened.
 
 **Secrets**
-- `.env` files are never committed. Every new variable is added to `.env.example` with a placeholder value.
-- Real credentials (Paystack, LLM, WhatsApp) are kept in a shared password manager and in GitHub Actions secrets, never in chat or code.
+- `.env` files are never committed. Every new variable is added to `.env.example` and to [`DEPLOY.md`](DEPLOY.md).
+- Real credentials (Paystack, Anthropic, WhatsApp, SasuSync) live only in the Convex and Vercel dashboards and a shared password manager, never in chat or code.
 
 ## 6. Environments
 
 | Environment | Source | Deployed by | Notes |
 |---|---|---|---|
-| Local | any branch | the developer | `docker compose up -d` in `stallo-api` |
-| Staging | `main` | CI, automatically | Test WhatsApp number and Paystack test keys |
-| Production | release tag `v*` | CI, after lead approval | Live numbers and keys |
+| Local | any branch | the developer | `npx convex dev` + `npm run dev` in `stallo-web`, each developer on their own Convex dev deployment |
+| Production | `main` | Vercel (runs `npx convex deploy`) | Live WhatsApp number, Paystack live key once approved |
 
 ## 7. Milestones
 
-| Week | Goal |
+| # | Goal |
 |---|---|
-| 1 | Repositories, CI and the local stack working for every contributor. Interfaces from §3.4 drafted and merged. Database schema v1. |
-| 2 | End to end with a linked test number: inbound message → queue → orchestrator → canned reply. Dashboard login and layout. |
-| 3 | LLM extracts an order → order created → confirmation reply. Orders page shows live data. |
-| 4 | Paystack payment link → webhook → payment confirmed → order marked paid. Payments page. |
-| 5 | Exception handling and the "needs attention" page; inventory; delivery status. |
-| 6 | Daily summary, paced notifications, hardening, staging demo. |
+| M1 | Convex schema, phone + password sign-up with SMS code, marketing site, dashboard shell |
+| M2 | Products |
+| M3 | WhatsApp webhook → stored message → reply, no duplicates on retries |
+| M4 | AI extraction → basket → customer confirms; low confidence goes to Needs attention |
+| M5 | Paystack link with Stallo's fee split off → webhook → paid |
+| M6 | Dispatch, PIN, rider page, failed delivery and returns |
+| M7 | Needs attention, daily summary, retries |
+| M8 | Deploy checklists ([`DEPLOY.md`](DEPLOY.md)) |
 
 ## 8. Communication
 
@@ -161,6 +163,6 @@ chore(ci): cache pip dependencies
 
 1. Accept the organization invitation. A lead adds you to your role's team.
 2. Read this handbook and the README of the repository you'll work in.
-3. Run `stallo-api` locally (`docker compose up -d`, then `uvicorn`) and `stallo-web` (`npm run dev`).
+3. Run `stallo-web` locally: `npx convex dev` in one terminal, `npm run dev` in another (see its README).
 4. Get development credentials from the shared password manager.
 5. Pick up an issue labelled `good first issue` and open a pull request within the first week.
