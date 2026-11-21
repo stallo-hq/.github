@@ -93,7 +93,7 @@ Replace `<backend>` with the production `.convex.site` address from step 2.
 | Service | Where | Address |
 |---|---|---|
 | Paystack | Settings → API Keys & Webhooks → **Live Webhook URL** | `https://<backend>/paystack/webhook` |
-| Meta | App → WhatsApp → Configuration → Webhook | Callback URL `https://<backend>/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`; subscribe to **messages** |
+| Meta | App → WhatsApp → Configuration → Webhook | Callback URL `https://<backend>/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`; subscribe to **messages** and **smb_message_echoes** (replies sellers type in the WhatsApp Business app on coexistence numbers; Stallo stays quiet in that chat for 30 minutes) |
 
 Leave Paystack's **Test** Webhook URL pointing at the dev backend.
 

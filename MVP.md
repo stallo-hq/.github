@@ -46,6 +46,10 @@ Payment status is tracked separately: `none → pending → paid | failed`, and 
 
 If Stallo isn't confident it understood, it doesn't change the order. It replies that the seller will get back to them, and puts the message under Needs attention.
 
+### When the seller replies by hand
+
+A seller who keeps the WhatsApp Business app on the same number (coexistence) can still reply to customers from their phone. Meta sends those replies to Stallo (the `smb_message_echoes` webhook field). Stallo adds them to the chat history and stays quiet in that chat for 30 minutes after the seller's last reply, so the customer never gets two different answers. Messages that arrive meanwhile are kept for context but not answered. The order page shows this and has a "Let Stallo reply now" button to end it early. When Stallo answers again, the assistant sees what the seller said.
+
 ## Delivery
 
 - The PIN is 4 digits, stored hashed. The rider gets 5 tries; after that the seller is told.
