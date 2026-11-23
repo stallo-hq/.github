@@ -1,11 +1,12 @@
 # Deploying Stallo to production
 
-Stallo runs as two hosted pieces:
+Stallo runs as three hosted pieces:
 
 | Piece | Where | What it is |
 |---|---|---|
 | Website and dashboard | Vercel | The `stallo-web` repo (React) |
-| Backend: data, WhatsApp, payments, AI, SMS | Convex (production deployment) | The `convex/` folder in `stallo-web` |
+| Backend: data, WhatsApp logic, payments, AI, SMS | Convex (production deployment) | The `convex/` folder in `stallo-web` |
+| WhatsApp gateway (sellers' linked numbers) | A machine you run (free VM or spare computer) | Evolution API + Postgres, `stallo-web/infra/evolution/` ([ADR 0002](decisions/0002-evolution-api.md)) |
 
 The FastAPI service (`stallo-api`, Render) is not used by the current product. Skip it.
 
@@ -19,8 +20,8 @@ Never put a secret in a chat, a commit or a screenshot. Secrets go only into the
 
 - [ ] **Paystack:** your business is activated for live payments (Paystack dashboard shows it).
 - [ ] **Paystack live keys:** if a live secret key was ever pasted anywhere outside the dashboard, generate new ones first: Paystack → Settings → API Keys & Webhooks.
-- [ ] **WhatsApp:** for real customers you need a real phone number on your WhatsApp Business Account (the Meta test number only messages up to 5 allow-listed numbers) and approved message templates (see `whatsapp-templates.md`).
-- [ ] **SasuSync:** SMS credit, and the sender ID `Stallo` approved.
+- [ ] **WhatsApp gateway:** the Evolution API server is running with HTTPS and answers `/instance/fetchInstances` (see `stallo-web/infra/evolution/README.md`). Use a separate server (or at least a separate API key and database) from development.
+- [ ] **SasuSync:** SMS credit, and the sender ID `Stallo` approved. SMS now also carries rider job links, seller alerts and the daily summary, so budget for more than sign-up codes.
 
 ## 2. Deploy the website and create the production backend
 
@@ -46,7 +47,7 @@ Settings take effect immediately; no redeploy needed.
 | `JWT_PRIVATE_KEY` | Run `node scripts/auth-keys.mjs > auth-keys.txt` in `stallo-web`, copy the first value, then delete `auth-keys.txt`. |
 | `JWKS` | The second value from the same file. Production needs its own pair; never reuse dev's. |
 
-### SMS sign-up codes (SasuSync)
+### SMS (SasuSync)
 
 | Name | Value |
 |---|---|
@@ -66,17 +67,15 @@ Settings take effect immediately; no redeploy needed.
 | `PLATFORM_FEE_CAP_PESEWAS` | `1500` (GH₵ 15 most per order) |
 | `PLATFORM_FEE_FLAT_PESEWAS` | Optional, e.g. `0`. |
 
-### WhatsApp (Meta)
+### WhatsApp (Evolution API)
 
 | Name | Value |
 |---|---|
-| `WHATSAPP_ACCESS_TOKEN` | Permanent system-user token (Meta Business settings → System users). |
-| `WHATSAPP_APP_SECRET` | Meta app → App settings → Basic → App secret. |
-| `WHATSAPP_VERIFY_TOKEN` | Any long random phrase you choose. Paste the same into Meta (step 4). |
-| `WHATSAPP_MANUAL_CONNECT` | `true` while sellers are connected by the Stallo team. |
-| `META_APP_ID`, `WHATSAPP_CONFIG_ID` | Only for self-service Embedded Signup, once Meta approves it. |
-| `WHATSAPP_PLATFORM_PHONE_NUMBER_ID` | Optional. Stallo's own number, for messages to sellers. Without it seller notifications are skipped. |
-| `WHATSAPP_GRAPH_VERSION` | Optional. |
+| `EVOLUTION_API_URL` | The gateway's public HTTPS address, e.g. `https://wa.example.com` (`SERVER_URL` in its `.env`). |
+| `EVOLUTION_API_KEY` | `AUTHENTICATION_API_KEY` from the gateway's `.env`. |
+| `EVOLUTION_WEBHOOK_SECRET` | A new random value, 32+ characters (`openssl rand -hex 32`). Never reuse dev's. |
+
+Remove any old `WHATSAPP_*` and `META_*` variables; nothing reads them any more.
 
 ### AI
 
@@ -93,24 +92,28 @@ Replace `<backend>` with the production `.convex.site` address from step 2.
 | Service | Where | Address |
 |---|---|---|
 | Paystack | Settings → API Keys & Webhooks → **Live Webhook URL** | `https://<backend>/paystack/webhook` |
-| Meta | App → WhatsApp → Configuration → Webhook | Callback URL `https://<backend>/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`; subscribe to **messages** and **smb_message_echoes** (replies sellers type in the WhatsApp Business app on coexistence numbers; Stallo stays quiet in that chat for 30 minutes) |
+| Evolution API | Nothing to paste | Stallo registers `https://<backend>/evolution/webhook` on each seller's session itself, signed with `EVOLUTION_WEBHOOK_SECRET` |
 
 Leave Paystack's **Test** Webhook URL pointing at the dev backend.
 
-Meta sends a number's messages to one address only. Once you switch it to production, the dev deployment stops receiving messages for that number. Also make sure the WhatsApp Business Account is subscribed to the app (`POST /{WABA-ID}/subscribed_apps`), as was needed on dev.
+If you change `EVOLUTION_WEBHOOK_SECRET` or the backend address later, run `npx convex run whatsappConnect:refreshWebhooks --prod` in `stallo-web`.
+
+If the production deployment ever had Meta-connected sellers, run `npx convex run admin:clearMetaFields --prod` once.
 
 ## 5. First run
 
 1. Open the website, sign up with your phone number (a real SMS arrives), create the business.
-2. Settings → WhatsApp: connect the number. Settings → Payouts: add the bank or mobile money account. This creates a **live** Paystack subaccount; the ones made on dev were test-only.
+2. Settings → WhatsApp: Show QR code, and scan it from the phone (WhatsApp → Settings → Linked devices). Settings → Payouts: add the bank or mobile money account. This creates a **live** Paystack subaccount; the ones made on dev were test-only.
 3. Settings → Delivery and payment, Delivery areas. Add products.
-4. From another phone, order something cheap on WhatsApp and pay GH₵ 1–2 for real. Check the order turns **Paid** and Stallo's fee shows on the order.
+4. From another phone, message the seller's number first, then order something cheap and pay GH₵ 1–2 for real. Check the reply shows "typing…" before it arrives. Check the order turns **Paid** and Stallo's fee shows on the order.
 5. Refund it from the order page. Check the refund arrives.
-6. Dispatch a test order and confirm the delivery code on the rider page.
+6. Dispatch a test order. Check the rider gets the job by SMS, and confirm the delivery code on the rider page.
+7. Reply to the test customer yourself from the seller's phone, then message again from the customer: Stallo should stay quiet for 3 hours (or until "Let Stallo reply now").
 
 ## 6. After launch
 
 - Watch Convex → Production → Logs for errors in the first days.
-- Needs attention in the dashboard shows anything the system couldn't handle.
+- Needs attention in the dashboard shows anything the system couldn't handle, including a phone that got unlinked.
+- Keep the gateway machine on and back up its Postgres volume. If it stops, Stallo can't read or reply until it's back.
 - To change the fee, change `PLATFORM_FEE_PERCENT` / `PLATFORM_FEE_CAP_PESEWAS`; no deploy needed.
 - New code reaches production when `main` is pushed (Vercel redeploys and pushes the backend).

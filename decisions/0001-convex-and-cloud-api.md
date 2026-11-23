@@ -1,6 +1,6 @@
 # ADR 0001: Convex for data and integrations, WhatsApp Cloud API, Paystack only
 
-- **Status:** accepted
+- **Status:** accepted; point 3 (WhatsApp Cloud API) superseded by [ADR 0002](0002-evolution-api.md)
 - **Date:** 2026-11-20
 
 ## Context
