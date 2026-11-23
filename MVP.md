@@ -5,16 +5,18 @@ Stallo lets a small seller in Ghana take orders on WhatsApp without typing every
 ## What's in
 
 1. Seller signs up with their Ghana mobile number (SMS code) and a password.
-2. Seller connects WhatsApp through Meta (official WhatsApp Cloud API): their existing WhatsApp Business number, or a new number.
+2. Seller links the WhatsApp or WhatsApp Business number they already sell on by scanning a QR code (Linked devices). They keep using WhatsApp on their phone as normal. See [ADR 0002](decisions/0002-evolution-api.md).
 3. Seller adds products: name, price, stock.
 4. Seller adds a payout account (MoMo or bank). Stallo creates a Paystack subaccount for it.
 5. Customers order in plain language (English, Twi, Pidgin). Stallo asks for anything missing and asks them to confirm.
 6. On confirmation the customer gets a Paystack link (MoMo or card). Stallo's fee is split off automatically; the rest is settled to the seller.
-7. When Paystack confirms payment the order is paid, stock goes down, and the seller is told.
-8. Seller dispatches with the rider's name and phone. The customer gets a 4-digit delivery code; the rider gets the order and a private page link.
+7. When Paystack confirms payment the order is paid, stock goes down, and the seller gets an SMS.
+8. Seller dispatches with the rider's name and phone. The customer gets a 4-digit delivery code (WhatsApp, or SMS if they haven't written in the last 24 hours); the rider gets the order and a private page link by SMS.
 9. Rider enters the code on that page, or sends it on WhatsApp. The order is delivered. Failed deliveries and returns are handled.
-10. Needs attention: messages Stallo wasn't sure about, failed payments or refunds, failed deliveries, stock problems, messages that couldn't be sent.
-11. Daily summary to the seller at 8 pm.
+10. Needs attention: messages Stallo wasn't sure about, failed payments or refunds, failed deliveries, stock problems, messages that couldn't be sent, WhatsApp unlinked.
+11. Daily summary to the seller by SMS at 8 pm.
+
+Stallo only ever replies on WhatsApp. It never starts a chat, never broadcasts, and never sends promotions from a seller's number (ADR 0002). Anyone who hasn't written to the seller gets an SMS instead.
 
 Not in the MVP: point of sale, rider app, native apps, multiple staff or branches, discounts, marketplace, Hubtel, analytics beyond today's numbers, Instagram or TikTok, holding payouts until delivery.
 
@@ -48,7 +50,7 @@ If Stallo isn't confident it understood, it doesn't change the order. It replies
 
 ### When the seller replies by hand
 
-A seller who keeps the WhatsApp Business app on the same number (coexistence) can still reply to customers from their phone. Meta sends those replies to Stallo (the `smb_message_echoes` webhook field). Stallo adds them to the chat history and stays quiet in that chat for 30 minutes after the seller's last reply, so the customer never gets two different answers. Messages that arrive meanwhile are kept for context but not answered. The order page shows this and has a "Let Stallo reply now" button to end it early. When Stallo answers again, the assistant sees what the seller said.
+The seller keeps using WhatsApp on their phone. When they type to a customer themselves, the linked device reports it to Stallo (a `fromMe` message Stallo didn't send). Stallo adds it to the chat history and stays quiet in that chat for 3 hours after the seller's last reply, so the customer never gets two different answers. Messages that arrive meanwhile are kept for context but not answered. The order page shows this and has a "Let Stallo reply now" button to end it early. When Stallo answers again, the assistant sees what the seller said.
 
 ## Delivery
 

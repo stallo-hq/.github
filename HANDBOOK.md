@@ -6,7 +6,7 @@ This handbook sets out how the Stallo project is organized: the repositories, th
 
 ## 1. Product overview
 
-Stallo is a WhatsApp commerce assistant for small sellers in Ghana. A seller connects their WhatsApp number through Meta's official WhatsApp Cloud API. Customers order in ordinary chat. Stallo reads those messages, builds the order, sends a Paystack payment link (keeping a per-order fee automatically), coordinates delivery with a 4-digit PIN, and sends the seller a daily summary along with anything that needs their attention.
+Stallo is a WhatsApp commerce assistant for small sellers in Ghana. A seller links their own WhatsApp number to Stallo by scanning a QR code (a linked device on Stallo's Evolution API server, [ADR 0002](decisions/0002-evolution-api.md)). Customers order in ordinary chat. Stallo reads those messages, builds the order, sends a Paystack payment link (keeping a per-order fee automatically), coordinates delivery with a 4-digit PIN, and sends the seller a daily summary along with anything that needs their attention.
 
 The MVP scope and flows are in [`MVP.md`](MVP.md). The architecture decision is [ADR 0001](decisions/0001-convex-and-cloud-api.md).
 
@@ -16,7 +16,7 @@ The MVP scope and flows are in [`MVP.md`](MVP.md). The architecture decision is 
 |---|---|---|
 | [`stallo-web`](https://github.com/stallo-hq/stallo-web) | Marketing site, seller dashboard, rider page **and the whole backend** (`convex/`: data, auth, webhooks, integrations, scheduled jobs) | React 19, TypeScript, Vite, React Router 7, Radix UI, Convex, Convex Auth |
 | [`stallo-api`](https://github.com/stallo-hq/stallo-api) | Not used by the MVP (see ADR 0001). Kept for reference until it is archived. | Python 3.12, FastAPI |
-| `.github` | This handbook, ADRs, MVP spec, deploy and template docs | Markdown |
+| `.github` | This handbook, ADRs, MVP spec, deploy and message docs | Markdown |
 
 **One backend.** Everything server-side runs as Convex functions in `stallo-web/convex/`: queries and mutations for the dashboard, HTTP actions for the WhatsApp and Paystack webhooks, actions for outside APIs, and crons for retries and the daily summary. The contract between the web app and the backend is the generated Convex API (`convex/_generated/api`), so types are always in step.
 
@@ -37,7 +37,7 @@ Every area of the codebase has **one owner role**. The owner decides questions w
 
 | Role | GitHub team | Responsibilities |
 |---|---|---|
-| **R1 Integrations** | `integrations` | WhatsApp Cloud API (Embedded Signup, webhook, sending, templates); reliable inbound processing and retries; seller accounts |
+| **R1 Integrations** | `integrations` | WhatsApp through Evolution API (QR linking, signed webhook, sending and its safety rules, the gateway in `infra/evolution/`); reliable inbound processing and retries; seller accounts |
 | **R2 AI & Orchestration** | `ai` | LLM extraction (prompt, output schema, confidence); conversation handling (basket, questions, confirmation) |
 | **R3 Commerce Domain** | `commerce` | Convex schema; order state machine; products and stock; delivery and PIN |
 | **R4 Payments & Notifications** | `payments` | Paystack subaccounts, split payments, webhook verification, refunds; needs attention; outbound messaging; daily summary |
@@ -65,7 +65,7 @@ Role assignments are recorded in the GitHub team memberships, not in this docume
 | Stored inbound message and its processing states | R1 → R2 | `convex/schema.ts` (`inboundMessages`), `convex/inbound.ts` |
 | LLM extraction output (intent, items, address, confidence) | R2 → R3 | `convex/integrations/assistant.ts` (`Extraction`) |
 | Order and payment status values and allowed moves | R3 ↔ R4 | `convex/model/orders.ts` |
-| WhatsApp template names and parameters | R1, R3, R4 | `convex/whatsapp/templates.ts`, [`whatsapp-templates.md`](whatsapp-templates.md) |
+| Message wording and channels (WhatsApp or SMS) | R1, R3, R4 | `convex/model/copy.ts`, [`whatsapp-messages.md`](whatsapp-messages.md) |
 | Dashboard data | R1–R4 → R5, R6 | Generated Convex API (`convex/_generated/api`) |
 
 A change to any file in this table is a **contract change**. Its pull request must tag every affected owner, and it's merged before any code that depends on it.
@@ -120,7 +120,8 @@ chore(ci): cache pip dependencies
 - Every function validates its arguments with `v.*` validators.
 - Status changes go through `transition()` / `setPaymentStatus()` in `convex/model/orders.ts` and are never set directly.
 - Webhooks verify the signature on the raw body, fail closed when the secret isn't set, store the event, and return quickly. Processing happens in scheduled functions.
-- Anything sent to WhatsApp goes through `queueMessage` (stored first, retried, failures recorded).
+- Anything sent to WhatsApp or by SMS goes through `queueMessage` (stored first, retried, failures recorded). Never call Evolution or SasuSync to send a message directly: `convex/outbound.ts` enforces the inbound-only rule, the hourly limit and chat order (ADR 0002).
+- Stallo never starts a WhatsApp chat and never sends broadcasts or promotions from a seller's number.
 - Every LLM extraction carries a confidence score. Results below `LLM_CONFIDENCE_THRESHOLD` go to Needs attention instead of changing an order. Prices always come from the product list, never from the model.
 - Money is integer pesewas, phones are E.164, time zone is Africa/Accra.
 
@@ -138,7 +139,7 @@ chore(ci): cache pip dependencies
 | Environment | Source | Deployed by | Notes |
 |---|---|---|---|
 | Local | any branch | the developer | `npx convex dev` + `npm run dev` in `stallo-web`, each developer on their own Convex dev deployment |
-| Production | `main` | Vercel (runs `npx convex deploy`) | Live WhatsApp number, Paystack live key once approved |
+| Production | `main` | Vercel (runs `npx convex deploy`); the Evolution gateway is run by hand (`infra/evolution/`) | Sellers' real numbers, Paystack live key once approved |
 
 ## 7. Milestones
 
