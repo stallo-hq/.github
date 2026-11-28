@@ -26,7 +26,7 @@ All wording lives in one place: `stallo-web/convex/model/copy.ts`. Every message
 
 | Function in `copy.ts` | Example |
 |---|---|
-| `sellerOrderPaid` | Stallo: order #1001 is paid (GH₵ 130.00). 2 × Jollof with chicken. Open your dashboard to send it out. |
+| `sellerOrderPaid` | Stallo: order #1001 is paid (GH₵ 130.00). 2 × Jollof with chicken. Open your dashboard to send it out. Paystack pays you, usually next business day. |
 | `sellerAttention` | Stallo: Delivery of order #1001 failed (customer not answering). Send it again or mark it returned. |
 | `sellerDailySummary` | Stallo, Ama's Kitchen today: 12 orders, GH₵ 1,240.00 paid, 3 to deliver, 1 need attention. |
 | `sellerWhatsAppDisconnected` | Stallo: WhatsApp for Ama's Kitchen was unlinked, so Stallo can't read or reply to orders. Open Settings > WhatsApp to link it again. |
